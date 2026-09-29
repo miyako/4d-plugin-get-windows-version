@@ -12,6 +12,8 @@
 #include "4DPluginAPI.h"
 #include "4DPlugin.h"
 
+#include <vector>
+
 #define kGetFileVersionInfo 1
 #define kGetVersionInfoEx 0
 
@@ -63,7 +65,8 @@ BOOL IsWow64()
     {
         if (!fnIsWow64Process(GetCurrentProcess(), &bIsWow64))
         {
-            bIsWow64 = TRUE;
+            // the call failed: bIsWow64 is not meaningful, report "not WOW64"
+            bIsWow64 = FALSE;
         }
     }
 #endif
@@ -95,38 +98,40 @@ BOOL getVersion(C_LONGINT &major, C_LONGINT &minor){
 
 BOOL getKernel32Version(C_LONGINT &major, C_LONGINT &minor){
 #if VERSIONWIN
-    TCHAR pszPath[MAX_PATH];
-    GetSystemDirectory(pszPath, sizeof(pszPath));
-    PathAppend(pszPath, L"kernel32.dll");
-    DWORD dwSize = GetFileVersionInfoSize(pszPath, NULL);
-    DWORD dwMajor, dwMinor;
-    if (dwSize != 0)
-    {
-        BYTE *pbVersionInfo = new BYTE[dwSize];
-        if (GetFileVersionInfo(pszPath, 0, dwSize, pbVersionInfo))
-        {
-            VS_FIXEDFILEINFO *pFileInfo = NULL;
-			UINT puLenFileInfo = 0;
-            if (VerQueryValue(pbVersionInfo, L"\\", (LPVOID*)&pFileInfo, &puLenFileInfo))
-            {
-                if (IsWow64() == TRUE) {
-                    
-                    dwMajor = pFileInfo->dwProductVersionMS >> 16 & 0xff; 
-                    dwMinor = pFileInfo->dwProductVersionMS >> 0 & 0xff;
-                    
-                }else{
-                    dwMajor = pFileInfo->dwProductVersionMS;
-                    dwMinor = pFileInfo->dwProductVersionMS;
-                }
-                
-                major.setIntValue(dwMajor);
-                minor.setIntValue(dwMinor);
-                return TRUE;
-            }
-        }
-    }
-#endif
+    // uSize is a count of characters, not bytes
+    WCHAR pszPath[MAX_PATH];
+    const UINT cchPath = sizeof(pszPath) / sizeof(pszPath[0]);
+    UINT len = GetSystemDirectoryW(pszPath, cchPath);
+    if ((len == 0) || (len >= cchPath))
+        return FALSE; // failed, or buffer too small (contents undefined)
+
+    if (!PathAppendW(pszPath, L"kernel32.dll"))
+        return FALSE;
+
+    DWORD dwSize = GetFileVersionInfoSizeW(pszPath, NULL);
+    if (dwSize == 0)
+        return FALSE;
+
+    // std::vector releases the buffer on every return path (was leaked before)
+    std::vector<BYTE> versionInfo(dwSize);
+    if (!GetFileVersionInfoW(pszPath, 0, dwSize, &versionInfo[0]))
+        return FALSE;
+
+    VS_FIXEDFILEINFO *pFileInfo = NULL;
+    UINT puLenFileInfo = 0;
+    if (!VerQueryValueW(&versionInfo[0], L"\\", (LPVOID*)&pFileInfo, &puLenFileInfo))
+        return FALSE;
+    if ((pFileInfo == NULL) || (puLenFileInfo < sizeof(VS_FIXEDFILEINFO)))
+        return FALSE;
+
+    // dwProductVersionMS packs major (high word) and minor (low word);
+    // the layout does not depend on process bitness, so no WOW64 check is needed
+    major.setIntValue(HIWORD(pFileInfo->dwProductVersionMS));
+    minor.setIntValue(LOWORD(pFileInfo->dwProductVersionMS));
+    return TRUE;
+#else
     return FALSE;
+#endif
 }
 
 // http://stackoverflow.com/questions/9817160/getversionex-under-windows-8
@@ -135,7 +140,7 @@ void setVersionString(C_TEXT &version, C_LONGINT &major, C_LONGINT &minor){
 
 #if VERSIONWIN
 	uint8_t buf[99];
-	sprintf((char *)buf, "%i.%i", major.getIntValue(), minor.getIntValue());
+	snprintf((char *)buf, sizeof(buf), "%i.%i", (int)major.getIntValue(), (int)minor.getIntValue());
 	CUTF8String _version(buf);
     version.setUTF8String(&_version);
 #endif
@@ -149,16 +154,21 @@ void Windows_Get_version(sLONG_PTR *pResult, PackagePtr pParams)
     
 	Param1.fromParamAtIndex(pParams, 1);
 
-	switch (Param1.getIntValue()) {
-      case kGetFileVersionInfo:
-        if(getKernel32Version(major, minor))
-            setVersionString(returnValue, major, minor);
-        break;
-      default:
-        if(getVersion(major, minor))
-            setVersionString(returnValue, major, minor);
-        break;
-        break;
+    // catch locally so the result is always set, even if something throws
+    // (e.g. std::bad_alloc); the catch-all in PluginMain has no way to set it
+    try {
+        switch (Param1.getIntValue()) {
+          case kGetFileVersionInfo:
+            if(getKernel32Version(major, minor))
+                setVersionString(returnValue, major, minor);
+            break;
+          default:
+            if(getVersion(major, minor))
+                setVersionString(returnValue, major, minor);
+            break;
+        }
+    } catch(...) {
+        // leave returnValue as an empty string
     }
     
 	returnValue.setReturn(pResult);
