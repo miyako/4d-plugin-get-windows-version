@@ -185,3 +185,61 @@ If ($platform=Windows)
 	End if
 End if
 ```
+
+## Manual version and release lifecycle
+
+**Bump version** and **Build** are independent manual Actions. Select the branch
+in the Actions UI; neither workflow requires `master`. Bump accepts patch, minor
+or major, validates the immutable selected commit and clean source, then commits
+only the source version metadata to that explicit branch. It creates no tag and
+does not trigger Build. Its nonforce push disables following annotated tags and
+requires the executable `.github/scripts/bump-hooks/pre-push` guard: the
+receive-pack advertisement must still contain the exact dispatch SHA, and the
+local SHA/ref must be the new direct-child commit and intended branch. A moved,
+rewound, deleted or already-updated branch fails closed, including races after
+the last `ls-remote`. Dispatch again on the branch you intend to bump.
+
+**Source authority:** the three inherited `MARKETING_VERSION` project settings
+and root `Info.plist` determine the strict `X.Y.Z` release version. The original
+bump header explicitly promised coordination with `CURRENT_PROJECT_VERSION` and
+plist version fields, although its implementation only updated the selected
+marketing key. This migration repairs the stale current-project `1.0.0` and
+copied English localization `1.0` to the existing authority `1.0.3`, without
+incrementing it. Subsequent bumps coordinate those source values and the
+localized get-info text. Valid version build-variable references are retained;
+an absent `CFBundleVersion` stays absent. Prebuilt bundle metadata, localization
+schema counters, dependencies and 4D data are not version inputs or bump targets.
+
+**Build** has no inputs and checks out `github.sha` in every job. Source metadata,
+remote tags and authenticated, paginated releases (including drafts) are checked
+before native work. Windows x64 and universal macOS builds, binary checks,
+artifact transfer, certificate import, codesign verification, ZIP/DMG
+notarization and DMG stapling remain mandatory. The original native settings,
+dependencies and signing secret names are retained; migration does not fix
+unrelated legacy build concerns. Publication is serialized repository-wide
+across branches, without cancelling a running Build.
+
+Immediately after all native/sign/notary/staple gates, publication repeats the
+selected-SHA/source-metadata, remote tag and complete release-list checks.
+Native outputs may change, but version source must still match the selected
+commit. Auth, 404, network, malformed
+responses and errors on any page stop publication; only a successful complete
+no-match means available. It creates `vX.Y.Z` at exactly the selected SHA using
+create-only `POST git/refs` (even same-SHA races fail), verifies the remote SHA,
+then separately creates a public non-prerelease release with that tag/SHA/name
+and empty notes, followed by uploads to the newly returned release ID.
+Assets remain `get-windows-version-X.Y.Z.zip` and
+`get-windows-version-X.Y.Z.dmg`. There is no automatic Build, tag-triggered
+workflow, overwrite, deletion, rollback or retry.
+
+**Manual recovery:** if a request fails or its response is uncertain, inspect
+the Actions diagnostic, remote tag SHA, authenticated release list including
+drafts, release ID and attached assets before doing anything. A tag, release
+or accepted upload may already exist and is deliberately retained. Do not
+rerun Build expecting repair: existing state blocks it. An authorized maintainer
+must decide how to finish a partial release manually, or choose a later source
+version via a separate manual bump; these workflows never delete or replace
+published/partial state.
+
+Local lifecycle checks (no native build, signing or real publication):
+`python3 -m unittest discover -s .github/tests -v` and `actionlint`.

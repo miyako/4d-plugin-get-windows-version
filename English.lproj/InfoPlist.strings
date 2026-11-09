@@ -1,1 +1,5 @@
-﻿/* Localized versions of Info.plist keys */CFBundleName = "get-windows-version";CFBundleShortVersionString = "1.0";CFBundleGetInfoString = "get-windows-version version 1.0, Copyright 2014 miyako.";
+﻿/* Localized versions of Info.plist keys */
+
+CFBundleName = "get-windows-version";
+CFBundleShortVersionString = "1.0.3";
+CFBundleGetInfoString = "get-windows-version version 1.0.3, Copyright 2014 miyako.";
