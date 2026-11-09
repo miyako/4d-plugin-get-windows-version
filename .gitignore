@@ -1,3 +1,4 @@
 build/*
 get-windows-version.4dbase/userPreferences.*
 get-windows-version.4dbase/Project/DerivedData/*
+__pycache__/
