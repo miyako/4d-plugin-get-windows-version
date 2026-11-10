@@ -9,6 +9,14 @@ A 4D plugin that reports which version of Windows 4D is running on, and whether 
 
 **Platforms:** Windows only (the commands exist on macOS but return empty values there — see below).
 
+### Native ownership maintenance
+
+The compiled but currently uncalled picture helpers have ownership and charset
+length corrections in source. Existing bundled binaries are not rebuilt by this
+change. See [the bounded audit and non-release regression instructions](tests/ownership/README.md)
+for the exact SDK snapshot, evidence, coverage and unresolved allocation-failure
+and platform limits.
+
 ---
 
 ## Requirements & platform notes
